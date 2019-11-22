@@ -1,5 +1,5 @@
 from gym import core, spaces
-from dm_control import suite
+from loader import single_team_load, load
 from dm_env import specs
 from gym.utils import seeding
 import gym
@@ -18,7 +18,7 @@ def convertSpec2Space(spec, clip_inf=False):
     if spec.dtype == np.int:
         # Discrete
         return DmcDiscrete(spec.minimum, spec.maximum)
-    else:
+    elif not isinstance(spec, list):
         # Box
         if type(spec) is specs.Array:
             return spaces.Box(-np.inf, np.inf, shape=spec.shape)
@@ -38,23 +38,29 @@ def convertSpec2Space(spec, clip_inf=False):
                                   _max + np.zeros(spec.shape))
         else:
             raise ValueError('Unknown spec!')
+    elif isinstance(spec, list):
+        return convertSpec2Space(spec[0])
+    else:
+        raise ValueError('Unknown spec!')
 
 
 def convertOrderedDict2Space(odict):
     if len(odict.keys()) == 1:
         # no concatenation
         return convertSpec2Space(list(odict.values())[0])
-    else:
+    elif not isinstance(odict, list):
         # concatentation
         numdim = sum([np.int(np.prod(odict[key].shape)) for key in odict])
         return spaces.Box(-np.inf, np.inf, shape=(numdim,))
+    elif isinstance(odict, list):
+        return convertOrderedDict2Space(odict[0])
 
 
 def convertObservation(spec_obs):
     if len(spec_obs.keys()) == 1:
         # no concatenation
         return list(spec_obs.values())[0]
-    else:
+    elif not isinstance(spec_obs, list):
         # concatentation
         numdim = sum([np.int(np.prod(spec_obs[key].shape)) for key in spec_obs])
         space_obs = np.zeros((numdim,))
@@ -64,14 +70,23 @@ def convertObservation(spec_obs):
                 space_obs[i:i + np.prod(np.array([spec_obs[key]]).shape)] = spec_obs[key].ravel()
             i += np.prod(spec_obs[key].shape)
         return space_obs
+    elif isinstance(spec_obs, list):
+        return [convertObservation(x) for x in spec_obs]
 
 
 class DmControlWrapper(core.Env):
 
     def __init__(self, domain_name, task_name, task_kwargs=None, visualize_reward=False, render_mode_list=None):
 
-        self.dmcenv = suite.load(domain_name=domain_name, task_name=task_name, task_kwargs=task_kwargs,
-                                 visualize_reward=visualize_reward)
+        single_team = (domain_name[-1] == "0")
+        team_size = int(domain_name[10])
+        try:
+            time_limit = task_kwargs["time_limit"]
+        except:
+            time_limit = 45.
+            
+        if single_team:
+            self.dmcenv = single_team_load(team_size=team_size, time_limit)
 
         # convert spec to space
         self.action_space = convertSpec2Space(self.dmcenv.action_spec(), clip_inf=True)
