@@ -1,9 +1,9 @@
 from gym import core, spaces
-from loader import single_team_load, load
+from dm_soccer2gym.loader import single_team_load, load
 from dm_env import specs
 from gym.utils import seeding
 import gym
-from dm_control2gym.viewer import DmControlViewer
+from dm_soccer2gym.viewer import DmControlViewer
 import numpy as np
 import sys
 
@@ -15,29 +15,30 @@ class DmcDiscrete(gym.spaces.Discrete):
 
 
 def convertSpec2Space(spec, clip_inf=False):
-    if spec.dtype == np.int:
-        # Discrete
-        return DmcDiscrete(spec.minimum, spec.maximum)
-    elif not isinstance(spec, list):
+    if not isinstance(spec, list):
+        if spec.dtype == np.int:
+            # Discrete
+            return DmcDiscrete(spec.minimum, spec.maximum)
         # Box
-        if type(spec) is specs.Array:
-            return spaces.Box(-np.inf, np.inf, shape=spec.shape)
-        elif type(spec) is specs.BoundedArray:
-            _min = spec.minimum
-            _max = spec.maximum
-            if clip_inf:
-                _min = np.clip(spec.minimum, -sys.float_info.max, sys.float_info.max)
-                _max = np.clip(spec.maximum, -sys.float_info.max, sys.float_info.max)
-
-            if np.isscalar(_min) and np.isscalar(_max):
-                # same min and max for every element
-                return spaces.Box(_min, _max, shape=spec.shape)
-            else:
-                # different min and max for every element
-                return spaces.Box(_min + np.zeros(spec.shape),
-                                  _max + np.zeros(spec.shape))
         else:
-            raise ValueError('Unknown spec!')
+            if type(spec) is specs.Array:
+                return spaces.Box(-np.inf, np.inf, shape=spec.shape)
+            elif type(spec) is specs.BoundedArray:
+                _min = spec.minimum
+                _max = spec.maximum
+                if clip_inf:
+                    _min = np.clip(spec.minimum, -sys.float_info.max, sys.float_info.max)
+                    _max = np.clip(spec.maximum, -sys.float_info.max, sys.float_info.max)
+
+                if np.isscalar(_min) and np.isscalar(_max):
+                    # same min and max for every element
+                    return spaces.Box(_min, _max, shape=spec.shape)
+                else:
+                    # different min and max for every element
+                    return spaces.Box(_min + np.zeros(spec.shape),
+                                      _max + np.zeros(spec.shape))
+            else:
+                raise ValueError('Unknown spec!')
     elif isinstance(spec, list):
         return convertSpec2Space(spec[0])
     else:
@@ -45,48 +46,62 @@ def convertSpec2Space(spec, clip_inf=False):
 
 
 def convertOrderedDict2Space(odict):
-    if len(odict.keys()) == 1:
-        # no concatenation
-        return convertSpec2Space(list(odict.values())[0])
-    elif not isinstance(odict, list):
-        # concatentation
-        numdim = sum([np.int(np.prod(odict[key].shape)) for key in odict])
-        return spaces.Box(-np.inf, np.inf, shape=(numdim,))
-    elif isinstance(odict, list):
+    if not isinstance(odict, list):
+        if len(odict.keys()) == 1:
+            # no concatenation
+            return convertSpec2Space(list(odict.values())[0])
+        elif not isinstance(odict, list):
+            # concatentation
+            numdim = sum([np.int(np.prod(odict[key].shape)) for key in odict])
+            return spaces.Box(-np.inf, np.inf, shape=(numdim,))
+    else:
         return convertOrderedDict2Space(odict[0])
 
 
 def convertObservation(spec_obs):
-    if len(spec_obs.keys()) == 1:
-        # no concatenation
-        return list(spec_obs.values())[0]
-    elif not isinstance(spec_obs, list):
-        # concatentation
-        numdim = sum([np.int(np.prod(spec_obs[key].shape)) for key in spec_obs])
-        space_obs = np.zeros((numdim,))
-        i = 0
-        for key in spec_obs:
-            if len(spec_obs[key].shape) == 0:
-                space_obs[i:i + np.prod(np.array([spec_obs[key]]).shape)] = spec_obs[key].ravel()
-            i += np.prod(spec_obs[key].shape)
-        return space_obs
-    elif isinstance(spec_obs, list):
+    if not isinstance(spec_obs, list):
+        if len(spec_obs.keys()) == 1:
+            # no concatenation
+            return list(spec_obs.values())[0]
+        else:
+            # concatentation
+            numdim = sum([np.int(np.prod(spec_obs[key].shape)) for key in spec_obs])
+            space_obs = np.zeros((numdim,))
+            i = 0
+            for key in spec_obs:
+                space_obs[i:i+np.prod(spec_obs[key].shape)] = spec_obs[key].ravel()
+                i += np.prod(spec_obs[key].shape)
+            return space_obs
+    else:
         return [convertObservation(x) for x in spec_obs]
 
 
 class DmControlWrapper(core.Env):
 
     def __init__(self, domain_name, task_name, task_kwargs=None, visualize_reward=False, render_mode_list=None):
-
-        single_team = (domain_name[-1] == "0")
-        team_size = int(domain_name[10])
+        
+        if domain_name == "dm_soccer":
+            pass
+        else:
+            raise ValueError("This library only works with dm_soccer tasks")
+        aux = task_name.find("vs")
+        if aux == -1:
+            raise ValueError("Invalid task")
+        team_1 = int(task_name[:aux])
+        team_2 = int(task_name[(aux + 2):])
+        if not(team_1 == team_2 or (team_1 == 0 and team_2 > 0) or (team_1 > 0 and team_2 == 0):
+            raise ValueError("Invalid task")
+        team_size = max(team_1, team_2)
+        self.num_players = team_1 + team_2
         try:
             time_limit = task_kwargs["time_limit"]
         except:
             time_limit = 45.
             
-        if single_team:
-            self.dmcenv = single_team_load(team_size=team_size, time_limit)
+        if team_1 == 0 or team_2 == 0:
+            self.dmcenv = single_team_load(team_size=team_size, time_limit=time_limit)
+        else:
+            self.dmcenv = load(team_size=team_size, time_limit=time_limit)
 
         # convert spec to space
         self.action_space = convertSpec2Space(self.dmcenv.action_spec(), clip_inf=True)

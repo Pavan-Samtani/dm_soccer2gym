@@ -1,14 +1,9 @@
 
-"""Multi-agent Single-Team MuJoCo soccer environment."""
-"""File corresponds to dm_control/locomotion/soccer/__init__.py 
-with about 4-5 lines modified to allow single team environments."""
-
-
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 from dm_control import composer
-from dm_control.locomotion.socer import load
+from dm_control.locomotion.soccer import load
 from dm_control.locomotion.soccer import _make_walker
 from dm_control.locomotion.soccer.boxhead import BoxHead
 from dm_control.locomotion.soccer.initializers import Initializer
@@ -24,6 +19,12 @@ from dm_control.locomotion.soccer.task import Task
 from dm_control.locomotion.soccer.team import Player
 from dm_control.locomotion.soccer.team import Team
 from six.moves import range
+
+
+"""Multi-agent Single-Team MuJoCo soccer environment."""
+"""File corresponds to dm_control/locomotion/soccer/__init__.py 
+with about 4-5 lines modified to allow single team environments."""
+
 
 _RGBA_BLUE = [.1, .1, .8, 1.]
 
