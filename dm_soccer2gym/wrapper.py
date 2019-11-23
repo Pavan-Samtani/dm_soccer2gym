@@ -76,32 +76,26 @@ def convertObservation(spec_obs):
         return [convertObservation(x) for x in spec_obs]
 
 
-class DmControlWrapper(core.Env):
+class DmSoccerWrapper(core.Env):
 
-    def __init__(self, domain_name, task_name, task_kwargs=None, visualize_reward=False, render_mode_list=None):
+    def __init__(self, team_1, team_2, task_kwargs={}, render_mode_list=None):
         
-        if domain_name == "dm_soccer":
-            pass
-        else:
-            raise ValueError("This library only works with dm_soccer tasks")
-        aux = task_name.find("vs")
-        if aux == -1:
-            raise ValueError("Invalid task")
-        team_1 = int(task_name[:aux])
-        team_2 = int(task_name[(aux + 2):])
-        if not(team_1 == team_2 or (team_1 == 0 and team_2 > 0) or (team_1 > 0 and team_2 == 0):
-            raise ValueError("Invalid task")
-        team_size = max(team_1, team_2)
+        
+        self.team_1 = team_1
+        self.team_2 = team_2
         self.num_players = team_1 + team_2
-        try:
-            time_limit = task_kwargs["time_limit"]
-        except:
-            time_limit = 45.
+        time_limit = task_kwargs.get("time_limit", 45.)
+        random_state = task_kwargs.get("random_state", None)
+        disable_walker_contacts = task_kwargs.get("disable_walker_contacts", True)
             
-        if team_1 == 0 or team_2 == 0:
-            self.dmcenv = single_team_load(team_size=team_size, time_limit=time_limit)
+        if team_2 == 0:
+            self.dmcenv = single_team_load(team_size=team_1, time_limit=time_limit, 
+                                           random_state=random_state,
+                                           disable_walker_contacts=disable_walker_contacts)
         else:
-            self.dmcenv = load(team_size=team_size, time_limit=time_limit)
+            self.dmcenv = load(team_size=team_1, time_limit=time_limit, 
+                               random_state=random_state,
+                               disable_walker_contacts=disable_walker_contacts)
 
         # convert spec to space
         self.action_space = convertSpec2Space(self.dmcenv.action_spec(), clip_inf=True)
