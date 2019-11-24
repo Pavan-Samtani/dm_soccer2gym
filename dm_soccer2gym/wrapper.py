@@ -1,5 +1,6 @@
 from gym import core, spaces
 from dm_soccer2gym.loader import single_team_load, load
+from dm_soccer2gym.rewards import calculate_rewards
 from dm_env import specs
 from gym.utils import seeding
 import gym
@@ -87,6 +88,7 @@ class DmSoccerWrapper(core.Env):
         time_limit = task_kwargs.get("time_limit", 45.)
         random_state = task_kwargs.get("random_state", None)
         disable_walker_contacts = task_kwargs.get("disable_walker_contacts", True)
+        self.rew_type = task_kwargs.get("rew_type", "sparse")
             
         if team_2 == 0:
             self.dmcenv = single_team_load(team_size=team_1, time_limit=time_limit, 
@@ -129,7 +131,7 @@ class DmSoccerWrapper(core.Env):
             a += self.action_space.offset
         self.timestep = self.dmcenv.step(a)
 
-        return self.getObservation(), self.timestep.reward, self.timestep.last(), {}
+        return self.getObservation(), calculate_rewards(self.timestep, self.rew_type), self.timestep.last(), {}
 
     def render(self, mode='human', close=False):
 

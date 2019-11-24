@@ -5,12 +5,8 @@ import hashlib
 import dm_soccer2gym
 
 
-def make(domain_name, task_name, task_kwargs={}):
+def make(task_name, task_kwargs={}):
     # register environment
-    if domain_name == "dm_soccer":
-        pass
-    else:
-        raise ValueError("This library only works with dm_soccer tasks")
     aux = task_name.find("vs")
     if aux == -1:
         raise ValueError("Invalid task")
@@ -21,7 +17,7 @@ def make(domain_name, task_name, task_kwargs={}):
     if team_1 < team_2:
         m = team_2
         team_2 = team_1
-        team_1 = team_2
+        team_1 = m
     prehash_id = f"dm_soccer_{team_1}_vs_{team_2}"
     h = hashlib.md5(prehash_id.encode())
     gym_id = h.hexdigest()+'-v0'
