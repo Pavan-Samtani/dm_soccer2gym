@@ -27,9 +27,10 @@ with about 4-5 lines modified to allow single team environments."""
 
 
 _RGBA_BLUE = [.1, .1, .8, 1.]
+_RGBA_RED = [.8, .1, .1, 1.]
 
 
-def _make_players_single(team_size):
+def _make_players_home(team_size):
     """Construct home team of `team_size` players."""
     home_players = []
     for i in range(team_size):
@@ -37,11 +38,20 @@ def _make_players_single(team_size):
                 Player(Team.HOME, _make_walker("home%d" % i, i, _RGBA_BLUE)))
     return home_players
 
+def _make_players_away(team_size):
+    """Construct away team of `team_size` players."""
+    away_players = []
+    for i in range(team_size):
+        away_players.append(
+                Player(Team.AWAY, _make_walker("away%d" % i, i, _RGBA_RED)))
+    return away_players
 
-def single_team_load(team_size,
-                     time_limit=45.,
-                     random_state=None,
-                     disable_walker_contacts=False):
+
+def teams_load(home_team_size,
+               away_team_size,
+               time_limit=45.,
+               random_state=None,
+               disable_walker_contacts=False):
     """Construct `team_size soccer environment.
     Args:
         team_size: Integer, the number of players in team. Must be between 1 and
@@ -55,15 +65,15 @@ def single_team_load(team_size,
     Raises:
         ValueError: If `team_size` is not between 1 and 11.
     """
-    if team_size < 0 or team_size > 11:
+    if home_team_size > 11 or away_team_size > 11:
         raise ValueError(
-                "Team size must be between 1 and 11 (received %d)." % team_size)
+                "Team size must be between 1 and 11 (received %d)." % max(home_team_size, away_team_size))
 
     return composer.Environment(
             task=Task(
-                    players=_make_players_single(team_size),
+                    players=_make_players_home(home_team_size) + _make_players_away(away_team_size),
                     arena=RandomizedPitch(
-                            min_size=(32, 24), max_size=(48, 36), keep_aspect_ratio=True),
+                            min_size=(32, 24), max_size=(32, 24), keep_aspect_ratio=True),
                     disable_walker_contacts=disable_walker_contacts),
             time_limit=time_limit,
             random_state=random_state)
