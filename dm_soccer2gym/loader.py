@@ -51,7 +51,9 @@ def teams_load(home_team_size,
                away_team_size,
                time_limit=45.,
                random_state=None,
-               disable_walker_contacts=False):
+               disable_walker_contacts=False,
+               min_size=(20, 15),
+               max_size=(24, 18)):
     """Construct `team_size soccer environment.
     Args:
         team_size: Integer, the number of players in team. Must be between 1 and
@@ -63,7 +65,7 @@ def teams_load(home_team_size,
     Returns:
         A `composer.Environment` instance.
     Raises:
-        ValueError: If `team_size` is not between 1 and 11.
+        ValueError: If any `team_size` is above 11.
     """
     if home_team_size > 11 or away_team_size > 11:
         raise ValueError(
@@ -73,7 +75,7 @@ def teams_load(home_team_size,
             task=Task(
                     players=_make_players_home(home_team_size) + _make_players_away(away_team_size),
                     arena=RandomizedPitch(
-                            min_size=(32, 24), max_size=(32, 24), keep_aspect_ratio=True),
+                            min_size=min_size, max_size=max_size, keep_aspect_ratio=True),
                     disable_walker_contacts=disable_walker_contacts),
             time_limit=time_limit,
             random_state=random_state)
