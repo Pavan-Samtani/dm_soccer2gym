@@ -1,4 +1,5 @@
 
+from collections import OrderedDict
 from gym import core, spaces
 from dm_soccer2gym.loader import teams_load
 from dm_env import specs
@@ -19,7 +20,8 @@ sigmoid = lambda x: 1 / (1 + np.exp(-x))
 arctan_yx = lambda x, y: (np.arctan(np.divide(y, x) if x != 0 and y != 0 else 0) + np.pi * (x < 0)) % (2 * np.pi)
 
 polar_mod = lambda x: np.sqrt(np.sum(np.square(x)))
-polar_ang = lambda x: arctan_yx(x[0, 1], x[0, 0])
+polar_ang = lambda x: arctan_yx(x[0, 0], x[0, 1])
+cos_vector = lambda x, y: np.dot(np.ravel(x), np.ravel(y)) / (np.linalg.norm(x) * np.linalg.norm(y))
 
 sqrt_2 = np.sqrt(2)
 
@@ -288,7 +290,10 @@ class DmReachWrapper(DmSoccerWrapper):
     def set_vals(self):
     
         obs = self.timestep.observation
-        self.max_dist = polar_mod(self.dmcenv.task.arena.size)
+        fl = self.timestep.observation[0]["field_front_left"][:, :2]
+        br = self.timestep.observation[0]["field_back_right"][:, :2]
+
+        self.max_dist = polar_mod(fl - br)
 
         self.got_kickable_rew = np.array([False for o in obs])
         ball_pos = [o['ball_ego_position'][:, :2] for o in obs]
@@ -313,9 +318,9 @@ class DmReachWrapper(DmSoccerWrapper):
             vel_ang_scaled = np.array([polar_ang(actual_vel) / (2 * np.pi)])
             ac_norm_scaled = np.array([polar_mod(np.tanh(actual_ac)) / sqrt_2])
             ac_ang_scaled = np.array([polar_ang(actual_ac) / (2 * np.pi)])
-            cut_obs.append({"ball_dist_scaled": ball_dist_scaled, "ball_angle_scaled": ball_angle_scaled,
-                            "vel_norm_scaled": vel_norm_scaled, "vel_ang_scaled": vel_ang_scaled,
-                            "ac_norm_scaled": ac_norm_scaled, "ac_ang_scaled": ac_ang_scaled})        
+            cut_obs.append(OrderedDict({"ball_dist_scaled": ball_dist_scaled, "ball_angle_scaled": ball_angle_scaled,
+                            		   "vel_norm_scaled": vel_norm_scaled, "vel_ang_scaled": vel_ang_scaled,
+                            		   "ac_norm_scaled": ac_norm_scaled, "ac_ang_scaled": ac_ang_scaled}))       
 
         return convertObservation(cut_obs)
 
@@ -346,7 +351,7 @@ class DmReachWrapper(DmSoccerWrapper):
                 if not kickable[j]:
                     rewards[j] = (self.old_ball_dist[j] - ball_dist[j]) - 1
                 else:
-                    rewards[j] = 50 * np.float32(kickable[j])
+                    rewards[j] = 50
             
             self.old_ball_dist = ball_dist
             self.got_kickable_rew = kickable | self.got_kickable_rew      
@@ -362,66 +367,78 @@ class DmGoalWrapper(DmSoccerWrapper):
     def __init__(self, team_1, team_2, task_kwargs={}, render_mode_list=None):
         super().__init__(team_1, team_2, task_kwargs, render_mode_list)
         self.dist_thresh = task_kwargs.get("dist_thresh", 0.03)
-        self.observation_space = spaces.Box(0, 1, shape=(13 + (self.num_players - 1) * 6,))
+        self.observation_space = spaces.Box(0, 1, shape=(18 + (self.num_players - 1) * 6,))
+        # self.observation_space = spaces.Box(0, 1, shape=(18 + (self.num_players - 1) * 4,))
 
     def set_vals(self):
     
         obs = self.timestep.observation
-        self.max_dist = polar_mod(self.dmcenv.task.arena.size)
+        fl = self.timestep.observation[0]["field_front_left"][:, :2]
+        br = self.timestep.observation[0]["field_back_right"][:, :2]
 
-        self.got_kickable_rew = np.array([False for o in obs])
-        ball_pos = [o['ball_ego_position'][:, :2] for o in obs]
-        ball_op_goal_pos = [ball_pos[i] - obs[i]["opponent_goal_mid"][:, :2] for i in range(self.num_players)]
-        ball_team_goal_pos = [ball_pos[i] - obs[i]["team_goal_mid"][:, :2] for i in range(self.num_players)]
-        self.old_ball_dist = np.array([polar_mod(ball_pos[i]) for i in range(self.num_players)]) / self.max_dist
-        self.old_ball_op_goal_dist = np.array([polar_mod(ball_op_goal_pos[i]) for i in range(self.num_players)]) / self.max_dist
-        self.old_ball_team_goal_dist = np.array([polar_mod(ball_team_goal_pos[i]) for i in range(self.num_players)]) / self.max_dist
+        self.max_dist = polar_mod(fl - br)
+
+        self.got_kickable_rew = np.array([False for _ in range(self.num_players)])
+        self.old_ball_dist = []
+        self.old_ball_op_dist = []
+        self.old_ball_team_dist = []
+
+        for i in range(self.num_players):
+            ball_pos = -obs[i]['ball_ego_position'][:, :2]
+            op_goal_pos = -obs[i]["opponent_goal_mid"][:, :2]
+            tm_goal_pos = -obs[i]["team_goal_mid"][:, :2]
+
+            ball_op_goal_pos = -ball_pos + op_goal_pos
+            ball_team_goal_pos = -ball_pos + tm_goal_pos
+            self.old_ball_dist.append(polar_mod(ball_pos) / self.max_dist)
+            self.old_ball_op_dist.append(polar_mod(ball_op_goal_pos) / self.max_dist)
+            self.old_ball_team_dist.append(polar_mod(ball_team_goal_pos) / self.max_dist)
+
+        self.old_ball_dist = np.array(self.old_ball_dist)
+        self.old_ball_op_goal_dist = np.array(self.old_ball_op_dist)
+        self.old_ball_team_goal_dist = np.array(self.old_ball_team_dist)
 
     def getObservation(self):
         
         obs = self.timestep.observation
         cut_obs = []
-        
+        ball_pos_all = [-o['ball_ego_position'][:, :2] for o in obs]
+        ball_dist_scaled_all = np.array([polar_mod(ball_pos) for ball_pos in ball_pos_all]) / self.max_dist
+        kickable = ball_dist_scaled_all < self.dist_thresh
+        kickable_ever = self.got_kickable_rew
+
+        ctr = 0
         for o in obs:
-            ball_pos = -o['ball_ego_position'][:, :2]
+            ball_pos = ball_pos_all[ctr]
             ball_vel = o["ball_ego_linear_velocity"][:, :2]
             op_goal_pos = -o["opponent_goal_mid"][:, :2]
             team_goal_pos = -o["team_goal_mid"][:, :2]
+
             actual_vel = o["sensors_velocimeter"][:, :2]
             actual_ac = o["sensors_accelerometer"][:, :2]
             ball_op_goal_pos = -ball_pos + op_goal_pos
             ball_team_goal_pos = -ball_pos + team_goal_pos
             ball_goal_vel = o["stats_vel_ball_to_goal"]
+            ball_dist_scaled = np.array([ball_dist_scaled_all[ctr]])
 
-            cut_obs.append({"ball_dist_scaled": np.array([(polar_mod(ball_pos) / self.max_dist)]), 
-                            "ball_angle_scaled": np.array([polar_ang(ball_pos) / (2 * np.pi)]),
-                            "ball_vel_scaled": np.array([(polar_mod(np.tanh(ball_pos)) / sqrt_2)]), 
-                            "ball_vel_angle_scaled": np.array([polar_ang(ball_pos) / (2 * np.pi)]),
-                            "op_goal_dist_scaled": np.array([(polar_mod(op_goal_pos) / self.max_dist)]),
-                            "op_goal_angle_scaled": np.array([polar_ang(op_goal_pos) / (2 * np.pi)]),
-                            "team_goal_dist_scaled": np.array([(polar_mod(team_goal_pos) / self.max_dist)]),
-                            "team_goal_angle_scaled": np.array([polar_ang(team_goal_pos) / (2 * np.pi)]),
-                            "vel_norm_scaled": np.array([polar_mod(np.tanh(actual_vel)) / sqrt_2]), 
-                            "vel_ang_scaled": np.array([polar_ang(actual_vel) / (2 * np.pi)]),
-                            "ac_norm_scaled": np.array([polar_mod(np.tanh(actual_ac)) / sqrt_2]), 
-                            "ac_ang_scaled": np.array([polar_ang(actual_ac) / (2 * np.pi)]),
-                            "ball_op_goal_dist_scaled": np.array([(polar_mod(ball_op_goal_pos) / self.max_dist)]),
-                            "ball_op_goal_angle_scaled": np.array([polar_ang(ball_op_goal_pos) / (2 * np.pi)]),
-                            "ball_team_goal_dist_scaled": np.array([(polar_mod(ball_team_goal_pos) / self.max_dist)]),
-                            "ball_team_goal_angle_scaled": np.array([polar_ang(ball_team_goal_pos) / (2 * np.pi)]),
-                            "ball_goal_vel": np.array([sigmoid(ball_goal_vel)])})
-
-            for player in range(self.team_1 - 1):
-                teammate_pos = -o[f"teammate_{player}_ego_position"][:, :2]
-                teammate_vel = o[f"teammate_{player}_ego_linear_velocity"][:, :2]
-                teammate_ball_pos = -teammate_pos + ball_pos
-
-                cut_obs[-1][f"teammate_{player}_dist_scaled"] = np.array([(polar_mod(teammate_pos) / self.max_dist)])
-                cut_obs[-1][f"teammate_{player}_angle_scaled"] = np.array([(polar_ang(teammate_pos) / (2 * np.pi))])
-                cut_obs[-1][f"teammate_{player}_vel_scaled"] = np.array([(polar_mod(np.tanh(teammate_pos)) / sqrt_2)])
-                cut_obs[-1][f"teammate_{player}_vel_angle_scaled"] = np.array([(polar_ang(teammate_pos) / (2 * np.pi))])
-                cut_obs[-1][f"teammate_{player}_ball_dist_scaled"] = np.array([(polar_mod(teammate_ball_pos) / self.max_dist)])
-                cut_obs[-1][f"teammate_{player}_ball_angle_scaled"] = np.array([(polar_ang(teammate_ball_pos) / (2 * np.pi))])
+            cut_obs.append(OrderedDict({"ball_dist_scaled": ball_dist_scaled, 
+                            		   "ball_angle_scaled": np.array([polar_ang(ball_pos) / (2 * np.pi)]),
+                            		   "ball_vel_scaled": np.array([(polar_mod(np.tanh(ball_vel)) / sqrt_2)]), 
+                            		   "ball_vel_angle_scaled": np.array([polar_ang(ball_vel) / (2 * np.pi)]),
+                            		   "op_goal_dist_scaled": np.array([(polar_mod(op_goal_pos) / self.max_dist)]),
+                            		   "op_goal_angle_scaled": np.array([polar_ang(op_goal_pos) / (2 * np.pi)]),
+                            		   "team_goal_dist_scaled": np.array([(polar_mod(team_goal_pos) / self.max_dist)]),
+                            		   "team_goal_angle_scaled": np.array([polar_ang(team_goal_pos) / (2 * np.pi)]),
+                            		   "vel_norm_scaled": np.array([polar_mod(np.tanh(actual_vel)) / sqrt_2]), 
+                            		   "vel_ang_scaled": np.array([polar_ang(actual_vel) / (2 * np.pi)]),
+                            		   "ac_norm_scaled": np.array([polar_mod(np.tanh(actual_ac)) / sqrt_2]), 
+                           		       "ac_ang_scaled": np.array([polar_ang(actual_ac) / (2 * np.pi)]),
+                            		   "ball_op_goal_dist_scaled": np.array([(polar_mod(ball_op_goal_pos) / self.max_dist)]),
+                            		   "ball_op_goal_angle_scaled": np.array([polar_ang(ball_op_goal_pos) / (2 * np.pi)]),
+                            		   "ball_team_goal_dist_scaled": np.array([(polar_mod(ball_team_goal_pos) / self.max_dist)]),
+                            		   "ball_team_goal_angle_scaled": np.array([polar_ang(ball_team_goal_pos) / (2 * np.pi)]),
+                            		   "ball_goal_vel": np.array([sigmoid(ball_goal_vel)]),
+                            		   "kickable_ever": np.float32(np.array([kickable_ever[ctr]]))}))
 
             for player in range(self.team_2):
                 opponent_pos = -o[f"opponent_{player}_ego_position"][:, :2]
@@ -430,10 +447,24 @@ class DmGoalWrapper(DmSoccerWrapper):
 
                 cut_obs[-1][f"opponent_{player}_dist_scaled"] = np.array([(polar_mod(opponent_pos) / self.max_dist)])
                 cut_obs[-1][f"opponent_{player}_angle_scaled"] = np.array([(polar_ang(opponent_pos) / (2 * np.pi))])
-                cut_obs[-1][f"opponent_{player}_vel_scaled"] = np.array([(polar_mod(np.tanh(opponent_pos)) / sqrt_2)])
-                cut_obs[-1][f"opponent_{player}_vel_angle_scaled"] = np.array([(polar_ang(opponent_pos) / (2 * np.pi))])
+                cut_obs[-1][f"opponent_{player}_vel_scaled"] = np.array([(polar_mod(np.tanh(opponent_vel)) / sqrt_2)])
+                cut_obs[-1][f"opponent_{player}_vel_angle_scaled"] = np.array([(polar_ang(opponent_vel) / (2 * np.pi))])
                 cut_obs[-1][f"opponent_{player}_ball_dist_scaled"] = np.array([(polar_mod(opponent_ball_pos) / self.max_dist)])
                 cut_obs[-1][f"opponent_{player}_ball_angle_scaled"] = np.array([(polar_ang(opponent_ball_pos) / (2 * np.pi))])
+
+            for player in range(self.team_1 - 1):
+                teammate_pos = -o[f"teammate_{player}_ego_position"][:, :2]
+                teammate_vel = o[f"teammate_{player}_ego_linear_velocity"][:, :2]
+                teammate_ball_pos = -teammate_pos + ball_pos
+
+                cut_obs[-1][f"teammate_{player}_dist_scaled"] = np.array([(polar_mod(teammate_pos) / self.max_dist)])
+                cut_obs[-1][f"teammate_{player}_angle_scaled"] = np.array([(polar_ang(teammate_pos) / (2 * np.pi))])
+                cut_obs[-1][f"teammate_{player}_vel_scaled"] = np.array([(polar_mod(np.tanh(teammate_vel)) / sqrt_2)])
+                cut_obs[-1][f"teammate_{player}_vel_angle_scaled"] = np.array([(polar_ang(teammate_vel) / (2 * np.pi))])
+                cut_obs[-1][f"teammate_{player}_ball_dist_scaled"] = np.array([(polar_mod(teammate_ball_pos) / self.max_dist)])
+                cut_obs[-1][f"teammate_{player}_ball_angle_scaled"] = np.array([(polar_ang(teammate_ball_pos) / (2 * np.pi))])
+
+            ctr += 1
 
         return convertObservation(cut_obs)
 
@@ -447,21 +478,39 @@ class DmGoalWrapper(DmSoccerWrapper):
         elif self.rew_type == "simple":
             obs = self.timestep.observation
             ball_pos = [-o['ball_ego_position'][:, :2] for o in obs] 
-            ball_op_goal_pos = [ball_pos[i] - obs[i]["opponent_goal_mid"][:, :2] for i in range(self.num_players)]
-            ball_team_goal_pos = [ball_pos[i] - obs[i]["team_goal_mid"][:, :2] for i in range(self.num_players)]
+
+            ball_dist = np.array([polar_mod(ball_pos[i]) for i in range(self.num_players)]) / self.max_dist
+            kickable = ball_dist < self.dist_thresh
+
+            rewards = (2000 * np.array(self.timestep.reward))
+            if not(np.any(rewards)):
+                rewards -= 1.
+                kickable_now_first = (kickable * (1 - self.got_kickable_rew))
+                rewards += (self.old_ball_dist - ball_dist) * (1 - kickable_now_first) + 100 * kickable_now_first
+            
+            self.old_ball_dist = ball_dist
+            self.got_kickable_rew = kickable | self.got_kickable_rew      
+
+            return rewards.tolist()
+
+        elif self.rew_type == "simple_v2":
+            obs = self.timestep.observation
+            ball_pos = [-o['ball_ego_position'][:, :2] for o in obs] 
+            ball_op_goal_pos = [-ball_pos[i] - obs[i]["opponent_goal_mid"][:, :2] for i in range(self.num_players)]
+            ball_team_goal_pos = [-ball_pos[i] - obs[i]["team_goal_mid"][:, :2] for i in range(self.num_players)]
 
             ball_dist = np.array([polar_mod(ball_pos[i]) for i in range(self.num_players)]) / self.max_dist
             ball_op_goal_dist = np.array([polar_mod(ball_op_goal_pos[i]) for i in range(self.num_players)]) / self.max_dist
             ball_team_goal_dist = np.array([polar_mod(ball_team_goal_pos[i]) for i in range(self.num_players)]) / self.max_dist
             kickable = ball_dist < self.dist_thresh
 
-            rewards = (100 * np.array(self.timestep.reward))
+            rewards = (2000 * np.array(self.timestep.reward))
             if not(np.any(rewards)):
-                rewards += ((self.old_ball_dist - ball_dist) - 1.5)
-                rewards += 10 * (kickable * (1 - self.got_kickable_rew))
-                if np.any(kickable | self.got_kickable_rew):
-                    rewards += 1.2 * (self.old_ball_op_goal_dist - ball_op_goal_dist)
-                    rewards -= 1.2 * (self.old_ball_team_goal_dist - ball_team_goal_dist) 
+                rewards -= 1.0
+                kickable_now_first = (kickable * (1 - self.got_kickable_rew))
+                rewards += 1.2 * ((self.old_ball_op_goal_dist - ball_op_goal_dist) - (self.old_ball_team_goal_dist - ball_team_goal_dist)) \
+                           * self.got_kickable_rew + ((self.old_ball_dist - ball_dist) * (1 - kickable_now_first) + 100 * kickable_now_first) \
+                           * (1 - self.got_kickable_rew)
             
             self.old_ball_dist = ball_dist
             self.old_ball_op_goal_dist = ball_op_goal_dist
