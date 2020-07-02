@@ -9,11 +9,6 @@ from dm_soccer2gym.viewer import DmControlViewer
 import numpy as np
 import sys
 
-simple_act_dict = {0: np.array([1, 0, 0]),
-                   1: np.array([-1, 0, 0]), 
-                   2: np.array([0, 1, 0]),
-                   3: np.array([0, -1, 0]), 
-                   4: np.array([0, 0, 0])}
 
 sigmoid = lambda x: 1 / (1 + np.exp(-x))
 
@@ -110,31 +105,29 @@ class DmSoccerWrapper(core.Env):
         self.team_1 = team_1
         self.team_2 = team_2
         self.num_players = team_1 + team_2
-        time_limit = task_kwargs.get("time_limit", 45.)
+
         random_state = task_kwargs.get("random_state", None)
         disable_walker_contacts = task_kwargs.get("disable_walker_contacts", True)
+
+        self.time_limit = task_kwargs.get("time_limit", 45.)        
+        self.control_timestep = task_kwargs.get("control_timestep", 0.025)
         self.rew_type = task_kwargs.get("rew_type", "sparse")
         self.disable_jump = task_kwargs.get("disable_jump", False)
-        self.discrete_actions = task_kwargs.get("discrete_actions", 0)
-        self.simple_actions = task_kwargs.get("simple_actions", False)
         self.flags = np.array([False for i in range(self.num_players)])
             
         self.dmcenv = teams_load(home_team_size=team_1, away_team_size=team_2,
-                                 time_limit=time_limit, random_state=random_state,
-                                 disable_walker_contacts=disable_walker_contacts)
+                                 time_limit=self.time_limit, random_state=random_state,
+                                 disable_walker_contacts=disable_walker_contacts,
+                                 control_timestep=self.control_timestep)
 
         # convert spec to space, discrete actions and disable jump if required
         self.action_space = convertSpec2Space(self.dmcenv.action_spec(), clip_inf=True)
-        self.discrete = isinstance(self.action_space, spaces.Discrete)
-        if not(self.simple_actions):
-            if self.disable_jump:
-                _shape = (self.action_space.shape[0] - 1,)
-                _low = self.action_space.low[:-1]
-                _high = self.action_space.high[:-1]
-                self.action_space = spaces.Box(_low, _high)
-            self.action_space, self.vals = dis_space(self.action_space, self.discrete_actions)
-        else:
-            self.action_space = DmcDiscrete(_minimum=0, _maximum=len(simple_act_dict.keys()))
+        
+        if self.disable_jump:
+            _shape = (self.action_space.shape[0] - 1,)
+            _low = self.action_space.low[:-1]
+            _high = self.action_space.high[:-1]
+            self.action_space = spaces.Box(_low, _high)
 
         self.observation_space = convertOrderedDict2Space(self.dmcenv.observation_spec())
 
@@ -166,36 +159,12 @@ class DmSoccerWrapper(core.Env):
 
     def step(self, a):
         
-        if type(self.action_space) == DmcDiscrete:
-            a_ = a.copy()
-            a_ = [x + self.action_space.offset for x in a_]
-            if not(self.discrete):
-                if not (self.simple_actions):
-                    num = self.dmcenv.action_spec()[0].shape[0] - int(self.disable_jump)
-                    aux_all = [np.zeros(num) for _ in range(self.num_players)]
-                    for j in range(self.num_players):
-                        aux = aux_all[j]
-                        div = self.discrete_actions ** (num - 1)
-                        total = a_[j]
-                        for i in range(num):
-                            aux[i] = self.vals[i][int(total / div)]
-                            total = total % div
-                            div /= self.discrete_actions
-                        if self.disable_jump:
-                            aux = np.concatenate([aux, np.array([0], dtype=np.float32)])
-                        aux_all[j] = aux
-                    a_ = aux_all
-                else:
-                    a_ = [simple_act_dict[i] for i in a_]
-            self.timestep = self.dmcenv.step(a_)
-        
-        else:
-            a_ = a.copy()
-            if self.disable_jump:
-                for j in range(len(a_)):
-                    a_[j] = np.concatenate([a_[j], np.array([0], dtype=np.float32)])
-                    
-            self.timestep = self.dmcenv.step(a_)
+        a_ = a.copy()
+        if self.disable_jump:
+            for j in range(len(a_)):
+                a_[j] = np.concatenate([a_[j], np.array([0], dtype=np.float32)])
+                
+        self.timestep = self.dmcenv.step(a_)
 
         return self.getObservation(), self.calculate_rewards(), self.get_end(), {}
 
@@ -212,51 +181,7 @@ class DmSoccerWrapper(core.Env):
 
     def calculate_rewards(self):
 
-        if self.rew_type == "sparse":
-            return [x * 100 for x in self.timestep.reward]
-
-        elif self.rew_type == "neg_distance_ball_goal":
-            obs = self.timestep.observation
-            goal_pos = [o['opponent_goal_mid'][:, :2] for o in obs]
-            ball_pos = [o['ball_ego_position'][:, :2] for o in obs]
-
-            return [- (polar_mod(ball_pos[i]) + \
-                       polar_mod(goal_pos[i])) * \
-                    (1 - (self.timestep.reward[i] == 1.)) for i in range(self.num_players)]
-
-        elif self.rew_type == "vel_ball_goal":
-            obs = self.timestep.observation
-            vel_goal = [o['stats_vel_ball_to_goal'][0] for o in obs]
-            vel_ball = [o['stats_vel_to_ball'][0] for o in obs]
-
-            return [(vel_ball[i] + vel_goal[i] + \
-                     100 * self.timestep.reward[i]) for i in range(self.num_players)]
-
-        elif self.rew_type == "openai_empty_goal":
-
-            obs = self.timestep.observation
-            goal_pos = [o['opponent_goal_mid'][:, :2] for o in obs]
-            ball_pos = [o['ball_ego_position'][:, :2] for o in obs]
-
-            ball_dist = np.array([polar_mod(ball_pos[i]) for i in range(self.num_players)])
-            ball_goal_dist = np.array([polar_mod(goal_pos[i] - ball_pos[i]) \
-                                       for i in range(self.num_players)])
-
-            kickable = ball_dist < 0.5
-
-            rewards = np.array(self.timestep.reward.copy()) * 5
-            rewards += (self.old_ball_dist - ball_dist)
-            rewards += 0.6 * (self.old_ball_goal_dist - ball_goal_dist)
-            rewards += np.float32(kickable * (1 - self.got_kickable_rew))
-            
-            self.old_ball_dist = ball_dist
-            self.old_ball_goal_dist = ball_goal_dist
-            self.got_kickable_rew = kickable | self.got_kickable_rew      
-
-            return rewards.tolist()
-
-        else:
-            raise ValueError("Invalid reward type")
+        return self.timestep.reward
 
     def render(self, mode='human_rgb_array', close=False):
 
@@ -337,8 +262,7 @@ class DmReachWrapper(DmSoccerWrapper):
             rewards = 50 * np.float32(kickable * (1 - self.got_kickable_rew))
 
             self.old_ball_dist = ball_dist
-            self.got_kickable_rew = kickable | self.got_kickable_rew   
-            print(kickable, self.got_kickable_rew)   
+            self.got_kickable_rew = kickable | self.got_kickable_rew    
     
             return rewards.tolist()
 
@@ -423,16 +347,16 @@ class DmGoalWrapper(DmSoccerWrapper):
 
             cut_obs.append(OrderedDict({"ball_dist_scaled": ball_dist_scaled, 
                             		   "ball_angle_scaled": np.array([polar_ang(ball_pos) / (2 * np.pi)]),
-                            		   "ball_vel_scaled": np.array([(polar_mod(np.tanh(ball_vel)) / sqrt_2)]), 
-                            		   "ball_vel_angle_scaled": np.array([polar_ang(ball_vel) / (2 * np.pi)]),
-                            		   "op_goal_dist_scaled": np.array([(polar_mod(op_goal_pos) / self.max_dist)]),
-                            		   "op_goal_angle_scaled": np.array([polar_ang(op_goal_pos) / (2 * np.pi)]),
+                                       "vel_norm_scaled": np.array([polar_mod(np.tanh(actual_vel)) / sqrt_2]), 
+                                       "vel_ang_scaled": np.array([polar_ang(actual_vel) / (2 * np.pi)]),
+                            		   "ac_norm_scaled": np.array([polar_mod(np.tanh(actual_ac)) / sqrt_2]), 
+                                       "ac_ang_scaled": np.array([polar_ang(actual_ac) / (2 * np.pi)]),
+                                       "op_goal_dist_scaled": np.array([(polar_mod(op_goal_pos) / self.max_dist)]),
+                                       "op_goal_angle_scaled": np.array([polar_ang(op_goal_pos) / (2 * np.pi)]),
                             		   "team_goal_dist_scaled": np.array([(polar_mod(team_goal_pos) / self.max_dist)]),
                             		   "team_goal_angle_scaled": np.array([polar_ang(team_goal_pos) / (2 * np.pi)]),
-                            		   "vel_norm_scaled": np.array([polar_mod(np.tanh(actual_vel)) / sqrt_2]), 
-                            		   "vel_ang_scaled": np.array([polar_ang(actual_vel) / (2 * np.pi)]),
-                            		   "ac_norm_scaled": np.array([polar_mod(np.tanh(actual_ac)) / sqrt_2]), 
-                           		       "ac_ang_scaled": np.array([polar_ang(actual_ac) / (2 * np.pi)]),
+                            		   "ball_vel_scaled": np.array([(polar_mod(np.tanh(ball_vel)) / sqrt_2)]), 
+                                       "ball_vel_angle_scaled": np.array([polar_ang(ball_vel) / (2 * np.pi)]),
                             		   "ball_op_goal_dist_scaled": np.array([(polar_mod(ball_op_goal_pos) / self.max_dist)]),
                             		   "ball_op_goal_angle_scaled": np.array([polar_ang(ball_op_goal_pos) / (2 * np.pi)]),
                             		   "ball_team_goal_dist_scaled": np.array([(polar_mod(ball_team_goal_pos) / self.max_dist)]),
@@ -471,9 +395,9 @@ class DmGoalWrapper(DmSoccerWrapper):
     def calculate_rewards(self):
 
         if self.rew_type == "sparse":
-            rewards = (100 * np.array(self.timestep.reward))  
+            rewards = self.timestep.reward
     
-            return rewards.tolist()
+            return rewards
 
         elif self.rew_type == "simple":
             obs = self.timestep.observation
@@ -482,11 +406,11 @@ class DmGoalWrapper(DmSoccerWrapper):
             ball_dist = np.array([polar_mod(ball_pos[i]) for i in range(self.num_players)]) / self.max_dist
             kickable = ball_dist < self.dist_thresh
 
-            rewards = (2000 * np.array(self.timestep.reward))
+            rewards = (100 * np.array(self.timestep.reward))
             if not(np.any(rewards)):
                 rewards -= 1.
                 kickable_now_first = (kickable * (1 - self.got_kickable_rew))
-                rewards += (self.old_ball_dist - ball_dist) * (1 - kickable_now_first) + 100 * kickable_now_first
+                rewards += (self.old_ball_dist - ball_dist) * (1 - kickable_now_first) + 10 * kickable_now_first
             
             self.old_ball_dist = ball_dist
             self.got_kickable_rew = kickable | self.got_kickable_rew      
@@ -504,12 +428,15 @@ class DmGoalWrapper(DmSoccerWrapper):
             ball_team_goal_dist = np.array([polar_mod(ball_team_goal_pos[i]) for i in range(self.num_players)]) / self.max_dist
             kickable = ball_dist < self.dist_thresh
 
-            rewards = (2000 * np.array(self.timestep.reward))
+            val_1 = (int(self.time_limit / self.control_timestep) + 1)
+            val_2 = val_1 // 10
+
+            rewards = (val_1 * np.array(self.timestep.reward))
             if not(np.any(rewards)):
-                rewards -= 1.0
+                rewards -= 0.1
                 kickable_now_first = (kickable * (1 - self.got_kickable_rew))
                 rewards += 1.2 * ((self.old_ball_op_goal_dist - ball_op_goal_dist) - (self.old_ball_team_goal_dist - ball_team_goal_dist)) \
-                           * self.got_kickable_rew + ((self.old_ball_dist - ball_dist) * (1 - kickable_now_first) + 100 * kickable_now_first) \
+                           * self.got_kickable_rew + ((self.old_ball_dist - ball_dist) * (1 - kickable_now_first) + val_2 * kickable_now_first) \
                            * (1 - self.got_kickable_rew)
             
             self.old_ball_dist = ball_dist
