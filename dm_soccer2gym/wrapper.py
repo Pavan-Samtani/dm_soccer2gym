@@ -428,8 +428,8 @@ class DmGoalWrapper(DmSoccerWrapper):
             ball_team_goal_dist = np.array([polar_mod(ball_team_goal_pos[i]) for i in range(self.num_players)]) / self.max_dist
             kickable = ball_dist < self.dist_thresh
 
-            val_1 = (int(self.time_limit / self.control_timestep) + 1)
-            val_2 = val_1 // 10
+            val_1 = (int(self.time_limit / self.control_timestep) + 1) / 10
+            val_2 = val_1 / 10
 
             rewards = (val_1 * np.array(self.timestep.reward))
             if not(np.any(rewards)):

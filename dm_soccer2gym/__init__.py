@@ -20,7 +20,7 @@ def make(task_name, task_kwargs={}):
             m = team_2
             team_2 = team_1
             team_1 = m
-        prehash_id = f"dm_soccer_{team_1}_vs_{team_2}_reach"
+        prehash_id = f"dm_soccer_{team_1}_vs_{team_2}_reach_{task_kwargs.get('rew_type', 'sparse')}"
         h = hashlib.md5(prehash_id.encode())
         gym_id = h.hexdigest()+'-v0'
 
@@ -45,7 +45,7 @@ def make(task_name, task_kwargs={}):
             m = team_2
             team_2 = team_1
             team_1 = m
-        prehash_id = f"dm_soccer_{team_1}_vs_{team_2}_goal"
+        prehash_id = f"dm_soccer_{team_1}_vs_{team_2}_goal_{task_kwargs.get('rew_type', 'sparse')}"
         h = hashlib.md5(prehash_id.encode())
         gym_id = h.hexdigest()+'-v0'
 
