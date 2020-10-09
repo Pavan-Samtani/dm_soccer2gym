@@ -140,7 +140,7 @@ class DmSoccerWrapper(core.Env):
         self.render_mode_list = render_mode_list
 
         # set seed
-        self.seed()
+        # self.seed()
 
     def getObservation(self):
         return convertObservation(self.timestep.observation)
@@ -390,7 +390,7 @@ class DmGoalWrapper(DmSoccerWrapper):
 
             ctr += 1
 
-        return convertObservation(cut_obs)
+        return np.clip(convertObservation(cut_obs), -1, 1)
 
     def calculate_rewards(self):
 
