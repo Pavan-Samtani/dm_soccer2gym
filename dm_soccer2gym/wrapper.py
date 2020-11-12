@@ -113,12 +113,14 @@ class DmSoccerWrapper(core.Env):
         self.control_timestep = task_kwargs.get("control_timestep", 0.025)
         self.rew_type = task_kwargs.get("rew_type", "sparse")
         self.disable_jump = task_kwargs.get("disable_jump", False)
+        self.observables = task_kwargs.get("observables", "core")
         self.flags = np.array([False for i in range(self.num_players)])
             
         self.dmcenv = teams_load(home_team_size=team_1, away_team_size=team_2,
                                  time_limit=self.time_limit, random_state=random_state,
                                  disable_walker_contacts=disable_walker_contacts,
-                                 control_timestep=self.control_timestep)
+                                 control_timestep=self.control_timestep,
+                                 observables=self.observables)
 
         # convert spec to space, discrete actions and disable jump if required
         self.action_space = convertSpec2Space(self.dmcenv.action_spec(), clip_inf=True)
