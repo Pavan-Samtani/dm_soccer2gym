@@ -7,6 +7,7 @@ import dm_soccer2gym
 
 def make(task_name, task_kwargs={}):
     # register environment
+    """
     if "reach" in task_name:
         task_name = task_name.replace("reach", "")
         aux = task_name.find("vs")
@@ -32,7 +33,8 @@ def make(task_name, task_kwargs={}):
                 kwargs={'team_1': team_1, 'team_2': team_2, 'task_kwargs': task_kwargs,
                        'render_mode_list': render_mode_list}
             )
-    elif "goal" in task_name:
+    """
+    if "goal" in task_name:
         task_name = task_name.replace("goal", "")
         aux = task_name.find("vs")
         if aux == -1:
@@ -45,7 +47,8 @@ def make(task_name, task_kwargs={}):
             m = team_2
             team_2 = team_1
             team_1 = m
-        prehash_id = f"dm_soccer_{team_1}_vs_{team_2}_goal_{task_kwargs.get('rew_type', 'sparse')}"
+        prehash_id = f"dm_soccer_{team_1}_vs_{team_2}_goal_{task_kwargs.get('rew_type', 'sparse')}" + \
+                     f"{task_kwargs.get('observables', 'core')}_obs"
         h = hashlib.md5(prehash_id.encode())
         gym_id = h.hexdigest()+'-v0'
 

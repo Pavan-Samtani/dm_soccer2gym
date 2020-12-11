@@ -9,7 +9,7 @@ from dm_control.locomotion.soccer.boxhead import BoxHead
 from dm_control.locomotion.soccer.initializers import Initializer
 from dm_control.locomotion.soccer.initializers import UniformInitializer
 from dm_control.locomotion.soccer.observables import CoreObservablesAdder
-from dm_control.locomotion.soccer.observables import InterceptionObservablesAdder
+from .observables import InterceptionObservablesAdderv2
 from dm_control.locomotion.soccer.observables import MultiObservablesAdder
 from dm_control.locomotion.soccer.observables import ObservablesAdder
 from dm_control.locomotion.soccer.pitch import Pitch
@@ -75,8 +75,10 @@ def teams_load(home_team_size,
 
     if observables == "core":
         observables = CoreObservablesAdder()
-    elif observables = "all":
-        observables = MultiObservablesAdder([CoreObservablesAdder(), InterceptionObservablesAdder()])
+    elif observables == "all":
+        observables = MultiObservablesAdder([CoreObservablesAdder(), InterceptionObservablesAdderv2()])
+    else:
+        raise ValueError(f"observables must be either 'core' or 'all', received {observables}")
 
     return composer.Environment(
         task=Task(

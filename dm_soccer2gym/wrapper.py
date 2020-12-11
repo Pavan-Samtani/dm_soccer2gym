@@ -206,6 +206,7 @@ class DmSoccerWrapper(core.Env):
         return self.viewer[mode]
 
 
+"""
 class DmReachWrapper(DmSoccerWrapper):
     
     def __init__(self, team_1, team_2, task_kwargs={}, render_mode_list=None):
@@ -286,6 +287,7 @@ class DmReachWrapper(DmSoccerWrapper):
 
         else:
             raise ValueError("Invalid reward type")
+"""
 
 
 class DmGoalWrapper(DmSoccerWrapper):
@@ -400,7 +402,8 @@ class DmGoalWrapper(DmSoccerWrapper):
             rewards = self.timestep.reward
     
             return rewards
-
+        
+        """
         elif self.rew_type == "simple":
             obs = self.timestep.observation
             ball_pos = [-o['ball_ego_position'][:, :2] for o in obs] 
@@ -418,8 +421,9 @@ class DmGoalWrapper(DmSoccerWrapper):
             self.got_kickable_rew = kickable | self.got_kickable_rew      
 
             return rewards.tolist()
+        """
 
-        elif self.rew_type == "simple_v2":
+        if self.rew_type == "simple_v2":
             obs = self.timestep.observation
             ball_pos = [-o['ball_ego_position'][:, :2] for o in obs] 
             ball_op_goal_pos = [-ball_pos[i] - obs[i]["opponent_goal_mid"][:, :2] for i in range(self.num_players)]
