@@ -27,3 +27,4 @@ class DmControlViewer:
 
     def close(self):
         self.window.close()
+

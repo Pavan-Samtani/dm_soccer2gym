@@ -5,7 +5,7 @@ import hashlib
 import dm_soccer2gym
 
 
-def make(task_name, task_kwargs={}):
+def make(task_name, task_kwargs={}, render_mode_list=None):
     # register environment
     """
     if "reach" in task_name:
@@ -101,7 +101,4 @@ def create_render_mode(name, show=True, return_pixel=True, height=480, width=640
 
 
 gym_id_list = []
-render_mode_list = {}
-create_render_mode('human', show=True, return_pixel=False)
-create_render_mode('rgb_array', show=False, return_pixel=True)
-create_render_mode('human_rgb_array', show=True, return_pixel=True)
+

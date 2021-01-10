@@ -1,11 +1,11 @@
 
 from collections import OrderedDict
 from gym import core, spaces
+from dm_control.locomotion.soccer import camera
 from dm_soccer2gym.loader import teams_load
 from dm_env import specs
 from gym.utils import seeding
 import gym
-from dm_soccer2gym.viewer import DmControlViewer
 import numpy as np
 import sys
 
@@ -115,12 +115,32 @@ class DmSoccerWrapper(core.Env):
         self.disable_jump = task_kwargs.get("disable_jump", False)
         self.observables = task_kwargs.get("observables", "core")
         self.flags = np.array([False for i in range(self.num_players)])
+
+        if render_mode_list is not None:
+            tracking_cameras = []
+            for min_distance in render_mode_list:
+                tracking_cameras.append(
+                    camera.MultiplayerTrackingCamera(
+                        min_distance=min_distance,
+                        distance_factor=1,
+                        smoothing_update_speed=0.1,
+                        width=720,
+                        height=360,
+                    ))
+        
+        else:
+            tracking_cameras = ()
+
+        self.tracking_cameras = tracking_cameras
+
+        self.render_mode_list = render_mode_list
             
         self.dmcenv = teams_load(home_team_size=team_1, away_team_size=team_2,
                                  time_limit=self.time_limit, random_state=random_state,
                                  disable_walker_contacts=disable_walker_contacts,
                                  control_timestep=self.control_timestep,
-                                 observables=self.observables)
+                                 observables=self.observables,
+                                 tracking_cameras=self.tracking_cameras)
 
         # convert spec to space, discrete actions and disable jump if required
         self.action_space = convertSpec2Space(self.dmcenv.action_spec(), clip_inf=True)
@@ -132,14 +152,6 @@ class DmSoccerWrapper(core.Env):
             self.action_space = spaces.Box(_low, _high)
 
         self.observation_space = convertOrderedDict2Space(self.dmcenv.observation_spec())
-
-        if render_mode_list is not None:
-            self.metadata['render.modes'] = list(render_mode_list.keys())
-            self.viewer = {key: None for key in render_mode_list.keys()}
-        else:
-            self.metadata['render.modes'] = []
-
-        self.render_mode_list = render_mode_list
 
         # set seed
         # self.seed()
@@ -185,25 +197,9 @@ class DmSoccerWrapper(core.Env):
 
         return self.timestep.reward
 
-    def render(self, mode='human_rgb_array', close=False):
+    def render(self):
 
-        self.pixels = self.dmcenv.physics.render(**self.render_mode_list[mode]['render_kwargs'])
-        if close:
-            if self.viewer[mode] is not None:
-                self._get_viewer(mode).close()
-                self.viewer[mode] = None
-            return
-        elif self.render_mode_list[mode]['show']:
-            self._get_viewer(mode).update(self.pixels)
-
-        if self.render_mode_list[mode]['return_pixel']:
-            return self.pixels
-
-    def _get_viewer(self, mode):
-        if self.viewer[mode] is None:
-            self.viewer[mode] = DmControlViewer(self.pixels.shape[1], self.pixels.shape[0],
-                                                self.render_mode_list[mode]['render_kwargs']['depth'])
-        return self.viewer[mode]
+        return [cam.render() for cam in self.tracking_cameras]
 
 
 """
@@ -454,3 +450,4 @@ class DmGoalWrapper(DmSoccerWrapper):
 
         else:
             raise ValueError("Invalid reward type")
+

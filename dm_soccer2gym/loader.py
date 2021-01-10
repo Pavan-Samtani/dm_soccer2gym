@@ -55,7 +55,8 @@ def teams_load(home_team_size,
                min_size=(20, 15),
                max_size=(24, 18),
                control_timestep=0.025,
-               observables="core"):
+               observables="core",
+               **task_kwargs):
     """Construct `team_size soccer environment.
     Args:
         team_size: Integer, the number of players in team. Must be between 1 and
@@ -87,6 +88,8 @@ def teams_load(home_team_size,
                 min_size=min_size, max_size=max_size, keep_aspect_ratio=True),
             disable_walker_contacts=disable_walker_contacts,
             control_timestep=control_timestep,
-            observables=observables),
+            observables=observables,
+            **task_kwargs),
         time_limit=time_limit,
         random_state=random_state)
+
