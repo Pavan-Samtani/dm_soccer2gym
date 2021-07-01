@@ -202,90 +202,6 @@ class DmSoccerWrapper(core.Env):
         return [cam.render() for cam in self.tracking_cameras]
 
 
-"""
-class DmReachWrapper(DmSoccerWrapper):
-    
-    def __init__(self, team_1, team_2, task_kwargs={}, render_mode_list=None):
-
-        super().__init__(team_1, team_2, task_kwargs, render_mode_list)
-        self.dist_thresh = task_kwargs.get("dist_thresh", 0.03)
-        self.observation_space = spaces.Box(0, 1, shape=(6,))
-
-    def set_vals(self):
-    
-        obs = self.timestep.observation
-        fl = self.timestep.observation[0]["field_front_left"][:, :2]
-        br = self.timestep.observation[0]["field_back_right"][:, :2]
-
-        self.max_dist = polar_mod(fl - br)
-
-        self.got_kickable_rew = np.array([False for o in obs])
-        ball_pos = [o['ball_ego_position'][:, :2] for o in obs]
-        self.old_ball_dist = np.array([polar_mod(ball_pos[i]) for i in range(self.num_players)]) / self.max_dist
-
-    def get_end(self):
-
-        return np.any(self.got_kickable_rew) | self.timestep.last()
-
-    def getObservation(self):
-        
-        obs = self.timestep.observation
-        cut_obs = []
-        
-        for o in obs:
-            ball_pos = -o['ball_ego_position'][:, :2]
-            actual_vel = o["sensors_velocimeter"][:, :2]
-            actual_ac = o["sensors_accelerometer"][:, :2]
-            ball_dist_scaled = np.array([(polar_mod(ball_pos) / self.max_dist)])
-            ball_angle_scaled = np.array([polar_ang(ball_pos) / (2 * np.pi)])
-            vel_norm_scaled = np.array([polar_mod(np.tanh(actual_vel)) / sqrt_2])
-            vel_ang_scaled = np.array([polar_ang(actual_vel) / (2 * np.pi)])
-            ac_norm_scaled = np.array([polar_mod(np.tanh(actual_ac)) / sqrt_2])
-            ac_ang_scaled = np.array([polar_ang(actual_ac) / (2 * np.pi)])
-            cut_obs.append(OrderedDict({"ball_dist_scaled": ball_dist_scaled, "ball_angle_scaled": ball_angle_scaled,
-                            		   "vel_norm_scaled": vel_norm_scaled, "vel_ang_scaled": vel_ang_scaled,
-                            		   "ac_norm_scaled": ac_norm_scaled, "ac_ang_scaled": ac_ang_scaled}))       
-
-        return convertObservation(cut_obs)
-
-    def calculate_rewards(self):
-
-        obs = self.timestep.observation
-        ball_pos = [o['ball_ego_position'][:, :2] for o in obs]
-
-        ball_dist = np.array([polar_mod(ball_pos[i]) for i in range(self.num_players)]) / self.max_dist
-
-        if self.rew_type == "sparse":
-
-            kickable = ball_dist < self.dist_thresh
-            rewards = 50 * np.float32(kickable * (1 - self.got_kickable_rew))
-
-            self.old_ball_dist = ball_dist
-            self.got_kickable_rew = kickable | self.got_kickable_rew    
-    
-            return rewards.tolist()
-
-        elif self.rew_type == "quick_reach":
-
-            kickable = ball_dist < self.dist_thresh
-
-            rewards = np.zeros(self.num_players)
-            for j in range(self.num_players):
-                if not kickable[j]:
-                    rewards[j] = (self.old_ball_dist[j] - ball_dist[j]) - 1
-                else:
-                    rewards[j] = 50
-            
-            self.old_ball_dist = ball_dist
-            self.got_kickable_rew = kickable | self.got_kickable_rew      
-
-            return rewards.tolist()
-
-        else:
-            raise ValueError("Invalid reward type")
-"""
-
-
 class DmGoalWrapper(DmSoccerWrapper):
 
     def __init__(self, team_1, team_2, task_kwargs={}, render_mode_list=None):
@@ -398,26 +314,6 @@ class DmGoalWrapper(DmSoccerWrapper):
             rewards = self.timestep.reward
     
             return rewards
-        
-        """
-        elif self.rew_type == "simple":
-            obs = self.timestep.observation
-            ball_pos = [-o['ball_ego_position'][:, :2] for o in obs] 
-
-            ball_dist = np.array([polar_mod(ball_pos[i]) for i in range(self.num_players)]) / self.max_dist
-            kickable = ball_dist < self.dist_thresh
-
-            rewards = (100 * np.array(self.timestep.reward))
-            if not(np.any(rewards)):
-                rewards -= 1.
-                kickable_now_first = (kickable * (1 - self.got_kickable_rew))
-                rewards += (self.old_ball_dist - ball_dist) * (1 - kickable_now_first) + 10 * kickable_now_first
-            
-            self.old_ball_dist = ball_dist
-            self.got_kickable_rew = kickable | self.got_kickable_rew      
-
-            return rewards.tolist()
-        """
 
         if self.rew_type == "simple_v2":
             obs = self.timestep.observation
